@@ -3,9 +3,12 @@
  *
  * Registers auth tools (always) and service-specific tools (conditionally)
  * based on which services are enabled in the plugin config.
+ *
+ * Fixed for OpenClaw 2026.x compatibility - uses plain object export
+ * instead of definePluginEntry which is not available.
  */
 
-import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
+import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 
 import { resolvePluginConfig } from "./config/schema.js";
 import { buildAuthTools } from "./auth/tools.js";
@@ -16,13 +19,33 @@ import { buildContactsTools } from "./services/contacts/tools.js";
 import { buildTasksTools } from "./services/tasks/tools.js";
 import { buildSheetsTools } from "./services/sheets/tools.js";
 
-export default definePluginEntry({
+/**
+ * Plugin configuration interface for backwards compatibility
+ * with different OpenClaw versions
+ */
+interface GoogleWorkspacePluginConfig {
+  services?: {
+    gmail?: { enabled?: boolean };
+    calendar?: { enabled?: boolean };
+    drive?: { enabled?: boolean };
+    contacts?: { enabled?: boolean };
+    tasks?: { enabled?: boolean };
+    sheets?: { enabled?: boolean };
+  };
+}
+
+const googleWorkspacePlugin = {
   id: "openclaw-google-workspace",
   name: "OpenClaw Google Workspace",
   description:
     "All-in-one Google Workspace integration with shared OAuth. Gmail, Calendar, Drive, Contacts, Tasks, Sheets.",
-  register(api) {
-    if (!api.registerTool) return;
+  register(api: OpenClawPluginApi) {
+    if (!api.registerTool) {
+      api.logger?.warn(
+        "[google-workspace] registerTool not available, skipping registration"
+      );
+      return;
+    }
 
     const config = resolvePluginConfig(api);
 
@@ -31,7 +54,7 @@ export default definePluginEntry({
       api.registerTool(tool);
     }
 
-    // Service tools — registered conditionally based on config, as optional tools
+    // Service tools — registered conditionally based on config
     const serviceBuilders = [
       { key: "gmail" as const, build: buildGmailTools },
       { key: "calendar" as const, build: buildCalendarTools },
@@ -42,12 +65,16 @@ export default definePluginEntry({
     ];
 
     for (const { key, build } of serviceBuilders) {
-      const serviceConfig = config.services[key];
+      const serviceConfig = (config as GoogleWorkspacePluginConfig).services?.[key];
       if (serviceConfig?.enabled) {
         for (const tool of build(config)) {
-          api.registerTool(tool, { optional: true });
+          api.registerTool(tool);
         }
       }
     }
+
+    api.logger?.info("[google-workspace] Plugin registered successfully");
   },
-});
+};
+
+export default googleWorkspacePlugin;
