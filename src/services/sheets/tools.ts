@@ -21,9 +21,18 @@ interface ToolDefinition {
   ) => Promise<ToolResult>;
 }
 
-async function getSheetsClient(config: ResolvedWorkspaceConfig) {
+const accountProperty = {
+  type: "string",
+  description:
+    "Optional configured Google account name. Omit to use the default account.",
+};
+
+async function getSheetsClient(
+  config: ResolvedWorkspaceConfig,
+  account?: string,
+) {
   const auth = createAuthService(config);
-  const oauth = await auth.createAuthenticatedClient();
+  const oauth = await auth.createAuthenticatedClient(account);
   return createSheetsClient(oauth);
 }
 
@@ -117,11 +126,12 @@ export function buildSheetsTools(
             description:
               "Cell range in A1 notation (e.g., 'Sheet1!A1:D10', 'A:D', 'Sheet1').",
           },
+          account: accountProperty,
         },
       },
       execute: async (_id, params) => {
         try {
-          const client = await getSheetsClient(config);
+          const client = await getSheetsClient(config, params.account as string | undefined);
           const data = await client.readRange(
             params.spreadsheetId as string,
             params.range as string,
@@ -163,6 +173,7 @@ export function buildSheetsTools(
             description:
               "2D array of values to write. Each inner array is a row.",
           },
+          account: accountProperty,
         },
       },
       execute: async (_id, params) => {
@@ -173,7 +184,7 @@ export function buildSheetsTools(
         }
 
         try {
-          const client = await getSheetsClient(config);
+          const client = await getSheetsClient(config, params.account as string | undefined);
           const result = await client.writeRange(
             params.spreadsheetId as string,
             params.range as string,

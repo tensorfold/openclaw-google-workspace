@@ -28,8 +28,8 @@ does not name an account, use the configured default account.
 - `google_workspace_complete_auth` — finish authorization with the Google code
 - `google_workspace_auth_status` — check which services are authorized and token validity
 
-For multi-account setups, pass the optional `account` argument to auth, Gmail,
-and Calendar tools when the user names a specific Google account.
+For multi-account setups, pass the optional `account` argument to auth and
+Google Workspace service tools when the user names a specific Google account.
 
 If any tool returns an authentication error, use the auth tools to re-authorize. Do not ask the user for raw tokens or secrets.
 

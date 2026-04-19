@@ -28,9 +28,18 @@ interface ToolDefinition {
   ) => Promise<ToolResult>;
 }
 
-async function getDriveClient(config: ResolvedWorkspaceConfig) {
+const accountProperty = {
+  type: "string",
+  description:
+    "Optional configured Google account name. Omit to use the default account.",
+};
+
+async function getDriveClient(
+  config: ResolvedWorkspaceConfig,
+  account?: string,
+) {
   const auth = createAuthService(config);
-  const oauth = await auth.createAuthenticatedClient();
+  const oauth = await auth.createAuthenticatedClient(account);
   return createDriveClient(oauth);
 }
 
@@ -65,11 +74,12 @@ export function buildDriveTools(
             default: 20,
             description: "Maximum number of files to return.",
           },
+          account: accountProperty,
         },
       },
       execute: async (_id, params) => {
         try {
-          const client = await getDriveClient(config);
+          const client = await getDriveClient(config, params.account as string | undefined);
           const files = await client.listFiles({
             folderId: params.folderId as string | undefined,
             query: params.query as string | undefined,
@@ -101,11 +111,12 @@ export function buildDriveTools(
             description:
               "Override export format for Google Workspace files (e.g., 'text/html', 'application/pdf').",
           },
+          account: accountProperty,
         },
       },
       execute: async (_id, params) => {
         try {
-          const client = await getDriveClient(config);
+          const client = await getDriveClient(config, params.account as string | undefined);
           const fileId = params.fileId as string;
 
           // Get metadata first
@@ -146,11 +157,12 @@ export function buildDriveTools(
             default: 20,
             description: "Maximum number of results.",
           },
+          account: accountProperty,
         },
       },
       execute: async (_id, params) => {
         try {
-          const client = await getDriveClient(config);
+          const client = await getDriveClient(config, params.account as string | undefined);
           const files = await client.searchFiles(
             params.query as string,
             (params.maxResults as number) ?? driveConfig.maxSearchResults,
@@ -189,6 +201,7 @@ export function buildDriveTools(
             type: "string",
             description: "Parent folder ID. Creates in root if omitted.",
           },
+          account: accountProperty,
         },
       },
       execute: async (_id, params) => {
@@ -197,7 +210,7 @@ export function buildDriveTools(
         }
 
         try {
-          const client = await getDriveClient(config);
+          const client = await getDriveClient(config, params.account as string | undefined);
           const file = await client.createFile({
             name: params.name as string,
             content: params.content as string,

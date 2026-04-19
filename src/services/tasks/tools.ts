@@ -20,9 +20,18 @@ interface ToolDefinition {
   ) => Promise<ToolResult>;
 }
 
-async function getTasksClient(config: ResolvedWorkspaceConfig) {
+const accountProperty = {
+  type: "string",
+  description:
+    "Optional configured Google account name. Omit to use the default account.",
+};
+
+async function getTasksClient(
+  config: ResolvedWorkspaceConfig,
+  account?: string,
+) {
   const auth = createAuthService(config);
-  const oauth = await auth.createAuthenticatedClient();
+  const oauth = await auth.createAuthenticatedClient(account);
   return createTasksClient(oauth);
 }
 
@@ -65,11 +74,12 @@ export function buildTasksTools(
             default: false,
             description: "Whether to include completed tasks.",
           },
+          account: accountProperty,
         },
       },
       execute: async (_id, params) => {
         try {
-          const client = await getTasksClient(config);
+          const client = await getTasksClient(config, params.account as string | undefined);
 
           let taskListId = params.taskListId as string | undefined;
           if (!taskListId) {
@@ -120,11 +130,12 @@ export function buildTasksTools(
             type: "string",
             description: "Task list ID. Uses default list if omitted.",
           },
+          account: accountProperty,
         },
       },
       execute: async (_id, params) => {
         try {
-          const client = await getTasksClient(config);
+          const client = await getTasksClient(config, params.account as string | undefined);
 
           let taskListId = params.taskListId as string | undefined;
           if (!taskListId) {
@@ -164,11 +175,12 @@ export function buildTasksTools(
             type: "string",
             description: "Task list ID. Uses default list if omitted.",
           },
+          account: accountProperty,
         },
       },
       execute: async (_id, params) => {
         try {
-          const client = await getTasksClient(config);
+          const client = await getTasksClient(config, params.account as string | undefined);
 
           let taskListId = params.taskListId as string | undefined;
           if (!taskListId) {

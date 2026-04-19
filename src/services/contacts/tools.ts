@@ -25,9 +25,18 @@ interface ToolDefinition {
   ) => Promise<ToolResult>;
 }
 
-async function getContactsClient(config: ResolvedWorkspaceConfig) {
+const accountProperty = {
+  type: "string",
+  description:
+    "Optional configured Google account name. Omit to use the default account.",
+};
+
+async function getContactsClient(
+  config: ResolvedWorkspaceConfig,
+  account?: string,
+) {
   const auth = createAuthService(config);
-  const oauth = await auth.createAuthenticatedClient();
+  const oauth = await auth.createAuthenticatedClient(account);
   return createContactsClient(oauth);
 }
 
@@ -58,11 +67,12 @@ export function buildContactsTools(
             default: 10,
             description: "Maximum number of contacts to return.",
           },
+          account: accountProperty,
         },
       },
       execute: async (_id, params) => {
         try {
-          const client = await getContactsClient(config);
+          const client = await getContactsClient(config, params.account as string | undefined);
           const contacts = await client.searchContacts(
             params.query as string,
             (params.maxResults as number) ?? contactsConfig.maxSearchResults,
@@ -99,11 +109,12 @@ export function buildContactsTools(
             description:
               "The contact's resource name (e.g., 'people/c1234567890').",
           },
+          account: accountProperty,
         },
       },
       execute: async (_id, params) => {
         try {
-          const client = await getContactsClient(config);
+          const client = await getContactsClient(config, params.account as string | undefined);
           const contact = await client.getContact(
             params.resourceName as string,
           );
