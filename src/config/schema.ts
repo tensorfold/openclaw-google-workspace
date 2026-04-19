@@ -58,6 +58,8 @@ export interface WorkspacePluginConfig {
   credentialsPath?: string;
   tokenPath?: string;
   oauthRedirectUri?: string;
+  defaultAccount?: string;
+  accounts?: Record<string, WorkspaceAccountConfig>;
   services?: {
     gmail?: Partial<GmailServiceConfig>;
     calendar?: Partial<CalendarServiceConfig>;
@@ -68,11 +70,28 @@ export interface WorkspacePluginConfig {
   };
 }
 
+export interface WorkspaceAccountConfig {
+  email?: string;
+  credentialsPath?: string;
+  tokenPath?: string;
+  oauthRedirectUri?: string;
+}
+
 export interface ResolvedWorkspaceConfig {
   credentialsPath?: string;
   tokenPath?: string;
   oauthRedirectUri?: string;
+  defaultAccount: string;
+  accounts: Record<string, ResolvedWorkspaceAccount>;
   services: ServiceConfigMap;
+}
+
+export interface ResolvedWorkspaceAccount {
+  id: string;
+  email?: string;
+  credentialsPath?: string;
+  tokenPath?: string;
+  oauthRedirectUri?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -129,14 +148,41 @@ export function resolvePluginConfig(api: {
 }): ResolvedWorkspaceConfig {
   const raw = (api.pluginConfig ?? {}) as WorkspacePluginConfig;
   const svc = raw.services ?? {};
+  const credentialsPath =
+    envString("GOOGLE_WORKSPACE_CREDENTIALS_PATH") ?? raw.credentialsPath;
+  const tokenPath =
+    envString("GOOGLE_WORKSPACE_TOKEN_PATH") ?? raw.tokenPath;
+  const oauthRedirectUri =
+    envString("GOOGLE_WORKSPACE_OAUTH_REDIRECT_URI") ?? raw.oauthRedirectUri;
+  const configuredAccounts = raw.accounts ?? {};
+  const defaultAccount = raw.defaultAccount ?? "default";
+  const accounts: Record<string, ResolvedWorkspaceAccount> = {};
+
+  for (const [id, account] of Object.entries(configuredAccounts)) {
+    accounts[id] = {
+      id,
+      email: account.email,
+      credentialsPath: account.credentialsPath ?? credentialsPath,
+      tokenPath: account.tokenPath,
+      oauthRedirectUri: account.oauthRedirectUri ?? oauthRedirectUri,
+    };
+  }
+
+  if (Object.keys(accounts).length === 0 && (credentialsPath || tokenPath)) {
+    accounts[defaultAccount] = {
+      id: defaultAccount,
+      credentialsPath,
+      tokenPath,
+      oauthRedirectUri,
+    };
+  }
 
   return {
-    credentialsPath:
-      envString("GOOGLE_WORKSPACE_CREDENTIALS_PATH") ?? raw.credentialsPath,
-    tokenPath:
-      envString("GOOGLE_WORKSPACE_TOKEN_PATH") ?? raw.tokenPath,
-    oauthRedirectUri:
-      envString("GOOGLE_WORKSPACE_OAUTH_REDIRECT_URI") ?? raw.oauthRedirectUri,
+    credentialsPath,
+    tokenPath,
+    oauthRedirectUri,
+    defaultAccount,
+    accounts,
     services: {
       gmail: {
         enabled:
@@ -215,5 +261,25 @@ export function resolvePluginConfig(api: {
           SERVICE_DEFAULTS.sheets.readOnly,
       },
     },
+  };
+}
+
+export function getConfiguredAccountIds(config: ResolvedWorkspaceConfig): string[] {
+  return Object.keys(config.accounts);
+}
+
+export function resolveAccountConfig(
+  config: ResolvedWorkspaceConfig,
+  accountId?: string,
+): ResolvedWorkspaceAccount {
+  const id = accountId ?? config.defaultAccount;
+  const account = config.accounts[id];
+  if (account) return account;
+
+  return {
+    id,
+    credentialsPath: config.credentialsPath,
+    tokenPath: config.tokenPath,
+    oauthRedirectUri: config.oauthRedirectUri,
   };
 }

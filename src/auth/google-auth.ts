@@ -12,7 +12,12 @@ import { constants as fsConstants } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { randomBytes } from "node:crypto";
 
-import type { ResolvedWorkspaceConfig } from "../config/schema.js";
+import {
+  getConfiguredAccountIds,
+  resolveAccountConfig,
+  type ResolvedWorkspaceAccount,
+  type ResolvedWorkspaceConfig,
+} from "../config/schema.js";
 import {
   AuthenticationRequiredError,
   PluginConfigurationError,
@@ -167,47 +172,62 @@ export interface AuthorizationRequest {
   url: string;
   scopes: string[];
   enabledServices: string[];
+  accountId: string;
+  email?: string;
 }
 
 export interface GoogleWorkspaceAuthService {
-  createAuthorizationUrl(): Promise<AuthorizationRequest>;
-  exchangeCodeForToken(code: string): Promise<void>;
-  hasStoredToken(): Promise<boolean>;
-  createAuthenticatedClient(): Promise<OAuth2Client>;
+  createAuthorizationUrl(accountId?: string): Promise<AuthorizationRequest>;
+  exchangeCodeForToken(code: string, accountId?: string): Promise<void>;
+  hasStoredToken(accountId?: string): Promise<boolean>;
+  createAuthenticatedClient(accountId?: string): Promise<OAuth2Client>;
   getRequiredScopes(): string[];
   getEnabledServices(): string[];
-  checkScopeGaps(): Promise<{ authorized: string[]; missing: string[] } | null>;
+  getAccountIds(): string[];
+  getDefaultAccountId(): string;
+  checkScopeGaps(accountId?: string): Promise<{ authorized: string[]; missing: string[] } | null>;
 }
 
 export function createAuthService(
   config: ResolvedWorkspaceConfig,
 ): GoogleWorkspaceAuthService {
-  const credentialsPath = config.credentialsPath;
-  const tokenPath = config.tokenPath;
-
-  if (!credentialsPath) {
-    throw new PluginConfigurationError(
-      "credentialsPath is required. Set it in plugin config or via GOOGLE_WORKSPACE_CREDENTIALS_PATH.",
-    );
-  }
-  if (!tokenPath) {
-    throw new PluginConfigurationError(
-      "tokenPath is required. Set it in plugin config or via GOOGLE_WORKSPACE_TOKEN_PATH.",
-    );
-  }
-
   const scopes = getRequiredScopes(config);
 
   const enabledServices = Object.entries(config.services)
     .filter(([, svc]) => svc.enabled)
     .map(([name]) => name);
 
-  let cachedClient: OAuth2Client | null = null;
+  const cachedClients = new Map<string, OAuth2Client>();
 
-  async function getOAuth2Client(): Promise<OAuth2Client> {
-    const creds = await loadCredentials(credentialsPath!);
+  function getAccount(accountId?: string): ResolvedWorkspaceAccount {
+    const requestedId = accountId ?? config.defaultAccount;
+    const accountIds = getConfiguredAccountIds(config);
+    if (accountIds.length > 0 && !config.accounts[requestedId]) {
+      throw new PluginConfigurationError(
+        `Unknown Google Workspace account "${requestedId}". Configured accounts: ${accountIds.join(", ")}.`,
+      );
+    }
+
+    const account = resolveAccountConfig(config, requestedId);
+    if (!account.credentialsPath) {
+      throw new PluginConfigurationError(
+        `credentialsPath is required for Google Workspace account "${account.id}". ` +
+          "Set it in plugin config, account config, or via GOOGLE_WORKSPACE_CREDENTIALS_PATH.",
+      );
+    }
+    if (!account.tokenPath) {
+      throw new PluginConfigurationError(
+        `tokenPath is required for Google Workspace account "${account.id}". ` +
+          "Set it in plugin config, account config, or via GOOGLE_WORKSPACE_TOKEN_PATH.",
+      );
+    }
+    return account;
+  }
+
+  async function getOAuth2Client(account: ResolvedWorkspaceAccount): Promise<OAuth2Client> {
+    const creds = await loadCredentials(account.credentialsPath!);
     const redirectUri =
-      config.oauthRedirectUri ??
+      account.oauthRedirectUri ??
       creds.redirect_uris?.[0] ??
       "http://127.0.0.1:3000/oauth2callback";
 
@@ -227,23 +247,33 @@ export function createAuthService(
       return enabledServices;
     },
 
-    async createAuthorizationUrl(): Promise<AuthorizationRequest> {
-      const client = await getOAuth2Client();
+    getAccountIds() {
+      return getConfiguredAccountIds(config);
+    },
+
+    getDefaultAccountId() {
+      return config.defaultAccount;
+    },
+
+    async createAuthorizationUrl(accountId?: string): Promise<AuthorizationRequest> {
+      const account = getAccount(accountId);
+      const client = await getOAuth2Client(account);
       const url = client.generateAuthUrl({
         access_type: "offline",
         scope: scopes,
         prompt: "consent",
         include_granted_scopes: true,
       });
-      return { url, scopes, enabledServices };
+      return { url, scopes, enabledServices, accountId: account.id, email: account.email };
     },
 
-    async exchangeCodeForToken(code: string): Promise<void> {
-      const client = await getOAuth2Client();
+    async exchangeCodeForToken(code: string, accountId?: string): Promise<void> {
+      const account = getAccount(accountId);
+      const client = await getOAuth2Client(account);
       const { tokens } = await client.getToken(code);
 
       // Merge with existing tokens to preserve refresh_token if Google only returns access_token
-      const existing = await readStoredTokens(tokenPath!);
+      const existing = await readStoredTokens(account.tokenPath!);
       const merged: Credentials = {
         ...existing,
         ...tokens,
@@ -253,24 +283,29 @@ export function createAuthService(
         merged.refresh_token = existing.refresh_token;
       }
 
-      await writeTokens(tokenPath!, merged);
+      await writeTokens(account.tokenPath!, merged);
+      cachedClients.delete(account.id);
     },
 
-    async hasStoredToken(): Promise<boolean> {
-      return tokenFileExists(tokenPath!);
+    async hasStoredToken(accountId?: string): Promise<boolean> {
+      const account = getAccount(accountId);
+      return tokenFileExists(account.tokenPath!);
     },
 
-    async createAuthenticatedClient(): Promise<OAuth2Client> {
+    async createAuthenticatedClient(accountId?: string): Promise<OAuth2Client> {
+      const account = getAccount(accountId);
+      const cachedClient = cachedClients.get(account.id);
       if (cachedClient) return cachedClient;
 
-      const tokens = await readStoredTokens(tokenPath!);
+      const tokens = await readStoredTokens(account.tokenPath!);
       if (!tokens) {
         throw new AuthenticationRequiredError(
-          "No stored OAuth tokens found. Run google_workspace_begin_auth to authorize.",
+          `No stored OAuth tokens found for Google Workspace account "${account.id}". ` +
+            "Run google_workspace_begin_auth to authorize.",
         );
       }
 
-      const client = await getOAuth2Client();
+      const client = await getOAuth2Client(account);
       client.setCredentials(tokens);
 
       // Auto-refresh: persist new tokens when Google refreshes them
@@ -279,20 +314,21 @@ export function createAuthService(
         if (!merged.refresh_token && tokens.refresh_token) {
           merged.refresh_token = tokens.refresh_token;
         }
-        writeTokens(tokenPath!, merged).catch(() => {
+        writeTokens(account.tokenPath!, merged).catch(() => {
           // Token write failure is non-fatal — next call will re-refresh
         });
       });
 
-      cachedClient = client;
+      cachedClients.set(account.id, client);
       return client;
     },
 
-    async checkScopeGaps(): Promise<{
+    async checkScopeGaps(accountId?: string): Promise<{
       authorized: string[];
       missing: string[];
     } | null> {
-      const tokens = await readStoredTokens(tokenPath!);
+      const account = getAccount(accountId);
+      const tokens = await readStoredTokens(account.tokenPath!);
       if (!tokens) return null;
 
       const granted = tokens.scope?.split(" ") ?? [];

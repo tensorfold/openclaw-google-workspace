@@ -27,9 +27,18 @@ interface ToolDefinition {
   ) => Promise<ToolResult>;
 }
 
-async function getGmailClient(config: ResolvedWorkspaceConfig) {
+const accountProperty = {
+  type: "string",
+  description:
+    "Optional configured Google account name. Omit to use the default account.",
+};
+
+async function getGmailClient(
+  config: ResolvedWorkspaceConfig,
+  account?: string,
+) {
   const auth = createAuthService(config);
-  const oauth = await auth.createAuthenticatedClient();
+  const oauth = await auth.createAuthenticatedClient(account);
   return createGmailClient(oauth);
 }
 
@@ -60,11 +69,12 @@ export function buildGmailTools(
             default: 20,
             description: "Maximum number of results to return.",
           },
+          account: accountProperty,
         },
       },
       execute: async (_id, params) => {
         try {
-          const client = await getGmailClient(config);
+          const client = await getGmailClient(config, params.account as string | undefined);
           const query = params.query as string;
           const maxResults =
             (params.maxResults as number) ?? gmailConfig.maxSearchResults;
@@ -90,11 +100,12 @@ export function buildGmailTools(
             type: "string",
             description: "The Gmail message ID to read.",
           },
+          account: accountProperty,
         },
       },
       execute: async (_id, params) => {
         try {
-          const client = await getGmailClient(config);
+          const client = await getGmailClient(config, params.account as string | undefined);
           const messageId = params.messageId as string;
           const message = await client.getMessage(messageId);
           return textResult(formatEmailSummary(message));
@@ -120,11 +131,12 @@ export function buildGmailTools(
             default: 20,
             description: "Maximum number of unread messages to return.",
           },
+          account: accountProperty,
         },
       },
       execute: async (_id, params) => {
         try {
-          const client = await getGmailClient(config);
+          const client = await getGmailClient(config, params.account as string | undefined);
           const maxResults =
             (params.maxResults as number) ?? gmailConfig.maxSearchResults;
           const messages = await client.listUnread(maxResults);
@@ -157,11 +169,12 @@ export function buildGmailTools(
             default: 20,
             description: "Maximum number of messages to return.",
           },
+          account: accountProperty,
         },
       },
       execute: async (_id, params) => {
         try {
-          const client = await getGmailClient(config);
+          const client = await getGmailClient(config, params.account as string | undefined);
           const label = params.label as string;
           const maxResults =
             (params.maxResults as number) ?? gmailConfig.maxSearchResults;
@@ -203,6 +216,7 @@ export function buildGmailTools(
             type: "string",
             description: "BCC recipients (comma-separated email addresses).",
           },
+          account: accountProperty,
         },
       },
       execute: async (_id, params) => {
@@ -210,7 +224,7 @@ export function buildGmailTools(
           return errorResult(new ReadOnlyModeError("gmail", "send email"));
         }
         try {
-          const client = await getGmailClient(config);
+          const client = await getGmailClient(config, params.account as string | undefined);
           const result = await client.sendEmail({
             to: params.to as string,
             subject: params.subject as string,

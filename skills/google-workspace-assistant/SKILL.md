@@ -21,11 +21,15 @@ This skill is channel-agnostic. Behave the same way regardless of where the requ
 
 ## Authentication
 
-All services share a single Google OAuth flow.
+Services can be configured with one or more named Google accounts. If the user
+does not name an account, use the configured default account.
 
 - `google_workspace_begin_auth` — start authorization for all enabled services
 - `google_workspace_complete_auth` — finish authorization with the Google code
 - `google_workspace_auth_status` — check which services are authorized and token validity
+
+For multi-account setups, pass the optional `account` argument to auth, Gmail,
+and Calendar tools when the user names a specific Google account.
 
 If any tool returns an authentication error, use the auth tools to re-authorize. Do not ask the user for raw tokens or secrets.
 

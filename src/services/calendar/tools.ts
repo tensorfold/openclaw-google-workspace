@@ -27,9 +27,18 @@ interface ToolDefinition {
   ) => Promise<ToolResult>;
 }
 
-async function getCalendarClient(config: ResolvedWorkspaceConfig) {
+const accountProperty = {
+  type: "string",
+  description:
+    "Optional configured Google account name. Omit to use the default account.",
+};
+
+async function getCalendarClient(
+  config: ResolvedWorkspaceConfig,
+  account?: string,
+) {
   const auth = createAuthService(config);
-  const oauth = await auth.createAuthenticatedClient();
+  const oauth = await auth.createAuthenticatedClient(account);
   return createCalendarClient(oauth);
 }
 
@@ -67,11 +76,12 @@ export function buildCalendarTools(
             default: 25,
             description: "Maximum events to return.",
           },
+          account: accountProperty,
         },
       },
       execute: async (_id, params) => {
         try {
-          const client = await getCalendarClient(config);
+          const client = await getCalendarClient(config, params.account as string | undefined);
           const calId = (params.calendarId as string) ?? calConfig.defaultCalendarId;
           const days = (params.windowDays as number) ?? calConfig.upcomingWindowDays;
           const maxResults = (params.maxResults as number) ?? 25;
@@ -142,6 +152,7 @@ export function buildCalendarTools(
             description:
               "Set to true after the user has confirmed the event details. Do not set to true on the first call.",
           },
+          account: accountProperty,
         },
       },
       execute: async (_id, params) => {
@@ -172,7 +183,7 @@ export function buildCalendarTools(
         }
 
         try {
-          const client = await getCalendarClient(config);
+          const client = await getCalendarClient(config, params.account as string | undefined);
           const calId = calConfig.defaultCalendarId;
 
           const isAllDay = /^\d{4}-\d{2}-\d{2}$/.test(startStr);
@@ -247,6 +258,7 @@ export function buildCalendarTools(
             description:
               "Set to true after the user has confirmed the changes.",
           },
+          account: accountProperty,
         },
       },
       execute: async (_id, params) => {
@@ -271,7 +283,7 @@ export function buildCalendarTools(
         }
 
         try {
-          const client = await getCalendarClient(config);
+          const client = await getCalendarClient(config, params.account as string | undefined);
           const calId = calConfig.defaultCalendarId;
           const timeZone = (params.timeZone as string | undefined) ?? calConfig.defaultTimeZone;
 
@@ -331,6 +343,7 @@ export function buildCalendarTools(
             description:
               "Set to true after the user has confirmed deletion.",
           },
+          account: accountProperty,
         },
       },
       execute: async (_id, params) => {
@@ -347,7 +360,7 @@ export function buildCalendarTools(
         }
 
         try {
-          const client = await getCalendarClient(config);
+          const client = await getCalendarClient(config, params.account as string | undefined);
           const calId = calConfig.defaultCalendarId;
           await client.deleteEvent(calId, params.eventId as string);
           return textResult(`Event ${params.eventId as string} deleted successfully.`);
@@ -370,11 +383,12 @@ export function buildCalendarTools(
             type: "string",
             description: "Calendar ID. Defaults to 'primary'.",
           },
+          account: accountProperty,
         },
       },
       execute: async (_id, params) => {
         try {
-          const client = await getCalendarClient(config);
+          const client = await getCalendarClient(config, params.account as string | undefined);
           const calId = (params.calendarId as string) ?? calConfig.defaultCalendarId;
           const event = await client.findNextMeeting(calId);
 

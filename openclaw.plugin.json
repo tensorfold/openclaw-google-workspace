@@ -20,6 +20,35 @@
         "type": "string",
         "minLength": 1
       },
+      "defaultAccount": {
+        "type": "string",
+        "minLength": 1
+      },
+      "accounts": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "email": {
+              "type": "string",
+              "minLength": 1
+            },
+            "credentialsPath": {
+              "type": "string",
+              "minLength": 1
+            },
+            "tokenPath": {
+              "type": "string",
+              "minLength": 1
+            },
+            "oauthRedirectUri": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      },
       "services": {
         "type": "object",
         "additionalProperties": false,

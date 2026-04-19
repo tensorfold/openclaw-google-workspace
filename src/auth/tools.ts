@@ -22,10 +22,18 @@ interface ToolDefinition {
   ) => Promise<ToolResult>;
 }
 
-const emptySchema = {
+const accountProperty = {
+  type: "string" as const,
+  description:
+    "Optional configured Google account name. Omit to use the default account.",
+};
+
+const accountSchema = {
   type: "object" as const,
   additionalProperties: false,
-  properties: {},
+  properties: {
+    account: accountProperty,
+  },
 };
 
 const completeAuthSchema = {
@@ -38,6 +46,7 @@ const completeAuthSchema = {
       description:
         "The authorization code from the Google OAuth redirect URL.",
     },
+    account: accountProperty,
   },
 };
 
@@ -59,14 +68,17 @@ export function buildAuthTools(
         "Generate a Google OAuth authorization URL for all enabled Workspace services. " +
         "The user should visit this URL, sign in with their Google account, grant consent, " +
         "and then provide the authorization code back.",
-      parameters: emptySchema,
-      execute: async () => {
+      parameters: accountSchema,
+      execute: async (_toolCallId, params) => {
         try {
           const auth = getAuthService(config);
-          const request = await auth.createAuthorizationUrl();
+          const account = params.account as string | undefined;
+          const request = await auth.createAuthorizationUrl(account);
 
           const lines = [
             "**Google Workspace Authorization**",
+            "",
+            `**Account:** ${request.accountId}${request.email ? ` (${request.email})` : ""}`,
             "",
             `Visit the following URL to authorize access:`,
             "",
@@ -102,6 +114,7 @@ export function buildAuthTools(
       parameters: completeAuthSchema,
       execute: async (_toolCallId, params) => {
         const code = params.authorizationCode as string;
+        const account = params.account as string | undefined;
         if (!code || code.trim().length === 0) {
           return textResult(
             "Error: authorizationCode is required. " +
@@ -111,11 +124,13 @@ export function buildAuthTools(
 
         try {
           const auth = getAuthService(config);
-          await auth.exchangeCodeForToken(code.trim());
+          await auth.exchangeCodeForToken(code.trim(), account);
 
           const enabledServices = auth.getEnabledServices();
+          const accountId = account ?? auth.getDefaultAccountId();
           return textResult(
             "**Authorization successful!**\n\n" +
+              `Account: ${accountId}\n\n` +
               `Tokens saved securely. The following services are now authorized:\n` +
               enabledServices.map((s) => `- ${s}`).join("\n") +
               "\n\nYou can now use any of the enabled Google Workspace tools.",
@@ -144,24 +159,40 @@ export function buildAuthTools(
       description:
         "Check the current Google Workspace authorization status. " +
         "Reports which services are enabled, whether tokens exist, and any scope gaps.",
-      parameters: emptySchema,
-      execute: async () => {
+      parameters: accountSchema,
+      execute: async (_toolCallId, params) => {
         try {
           const auth = getAuthService(config);
-          const hasToken = await auth.hasStoredToken();
           const enabledServices = auth.getEnabledServices();
           const requiredScopes = auth.getRequiredScopes();
+          const requestedAccount = params.account as string | undefined;
+          const accountIds = requestedAccount
+            ? [requestedAccount]
+            : auth.getAccountIds();
 
           const lines = [
             "**Google Workspace Auth Status**",
             "",
+            `**Default account:** ${auth.getDefaultAccountId()}`,
+            `**Configured accounts:** ${accountIds.join(", ") || "none"}`,
             `**Enabled services:** ${enabledServices.join(", ") || "none"}`,
             `**Required scopes:** ${requiredScopes.length}`,
-            `**Token stored:** ${hasToken ? "Yes" : "No"}`,
           ];
 
-          if (hasToken) {
-            const gaps = await auth.checkScopeGaps();
+          for (const accountId of accountIds) {
+            const hasToken = await auth.hasStoredToken(accountId);
+            lines.push("");
+            lines.push(`**Account:** ${accountId}`);
+            lines.push(`**Token stored:** ${hasToken ? "Yes" : "No"}`);
+
+            if (!hasToken) {
+              lines.push(
+                "No tokens found. Run `google_workspace_begin_auth` for this account.",
+              );
+              continue;
+            }
+
+            const gaps = await auth.checkScopeGaps(accountId);
             if (gaps) {
               if (gaps.missing.length === 0) {
                 lines.push(`**Scope status:** All required scopes authorized`);
@@ -174,15 +205,10 @@ export function buildAuthTools(
                 }
                 lines.push("");
                 lines.push(
-                  "Run `google_workspace_begin_auth` to authorize the missing scopes.",
+                  "Run `google_workspace_begin_auth` for this account to authorize the missing scopes.",
                 );
               }
             }
-          } else {
-            lines.push("");
-            lines.push(
-              "No tokens found. Run `google_workspace_begin_auth` to get started.",
-            );
           }
 
           // Show per-service readOnly status
