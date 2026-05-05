@@ -16,11 +16,43 @@ import { buildContactsTools } from "./services/contacts/tools.js";
 import { buildTasksTools } from "./services/tasks/tools.js";
 import { buildSheetsTools } from "./services/sheets/tools.js";
 
+/**
+ * Static tool catalogue for OpenClaw 2026.5+ plugin contracts.
+ * The runtime validates `contracts.tools` before agent tools may register.
+ */
+const GOOGLE_WORKSPACE_TOOL_NAMES = [
+  "google_workspace_begin_auth",
+  "google_workspace_complete_auth",
+  "google_workspace_auth_status",
+  "google_gmail_search",
+  "google_gmail_read",
+  "google_gmail_list_unread",
+  "google_gmail_list_by_label",
+  "google_gmail_send",
+  "google_calendar_list_events",
+  "google_calendar_create_event",
+  "google_calendar_update_event",
+  "google_calendar_delete_event",
+  "google_calendar_find_next_meeting",
+  "google_drive_list_files",
+  "google_drive_read_file",
+  "google_drive_search",
+  "google_drive_create_file",
+  "google_contacts_search",
+  "google_contacts_get",
+  "google_tasks_list",
+  "google_tasks_create",
+  "google_tasks_complete",
+  "google_sheets_read",
+  "google_sheets_write",
+] as const;
+
 export default definePluginEntry({
   id: "openclaw-google-workspace",
   name: "OpenClaw Google Workspace",
   description:
     "All-in-one Google Workspace integration with shared OAuth. Gmail, Calendar, Drive, Contacts, Tasks, Sheets.",
+  contracts: { tools: [...GOOGLE_WORKSPACE_TOOL_NAMES] },
   register(api) {
     if (!api.registerTool) return;
 
